@@ -448,10 +448,15 @@ export function normalizeSettings(input: AppSettings): AppSettings {
     typeof review?.prompt === 'string' && review.prompt.trim()
       ? review.prompt.trim()
       : DEFAULT_SETTINGS.review!.prompt;
+  const reviewSkillId =
+    typeof review?.skillId === 'string' && review.skillId.trim()
+      ? review.skillId.trim()
+      : undefined;
   out.review = {
     enabled: Boolean(review?.enabled ?? DEFAULT_SETTINGS.review!.enabled),
     agent: reviewAgent,
     prompt: reviewPrompt,
+    ...(reviewSkillId ? { skillId: reviewSkillId } : {}),
   };
 
   // Tasks

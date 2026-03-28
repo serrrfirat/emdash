@@ -9,6 +9,7 @@ export interface ReviewSettings {
   enabled: boolean;
   agent: ProviderId;
   prompt: string;
+  skillId?: string;
 }
 
 export interface ReviewConversationMetadata {

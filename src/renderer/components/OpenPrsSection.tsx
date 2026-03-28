@@ -16,6 +16,8 @@ import { Input } from './ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { useToast } from '../hooks/use-toast';
 import { useTaskManagementContext } from '../contexts/TaskManagementContext';
+import { useAppSettings } from '@/contexts/AppSettingsProvider';
+import { getReviewSettings } from '../lib/reviewChat';
 import {
   ArrowUpRight,
   CheckCircle2,
@@ -233,6 +235,7 @@ const ReviewersList: React.FC<{ reviewers: PullRequestReviewer[] }> = ({ reviewe
 const OpenPrsSection: React.FC<OpenPrsSectionProps> = ({ projectPath, projectId }) => {
   const { toast } = useToast();
   const { handleOpenExternalTask } = useTaskManagementContext();
+  const { settings } = useAppSettings();
   const [collapsed, setCollapsed] = useState(false);
   const [creatingForPr, setCreatingForPr] = useState<number | null>(null);
   const [appliedQuery, setAppliedQuery] = useState('');
@@ -275,6 +278,14 @@ const OpenPrsSection: React.FC<OpenPrsSectionProps> = ({ projectPath, projectId 
         prTitle: pr.title,
       });
 
+      const reviewSettings = getReviewSettings(settings);
+      let reviewPrompt = '';
+      if (reviewSettings.enabled && reviewSettings.skillId) {
+        reviewPrompt = `/${reviewSettings.skillId} ${pr.url}`;
+      } else if (reviewSettings.enabled) {
+        reviewPrompt = reviewSettings.prompt.trim();
+      }
+
       if (result.success && result.task) {
         const task: Task = {
           id: result.task.id,
@@ -285,7 +296,10 @@ const OpenPrsSection: React.FC<OpenPrsSectionProps> = ({ projectPath, projectId 
           status: result.task.status as Task['status'],
           agentId: result.task.agentId,
           useWorktree: true,
-          metadata: result.task.metadata,
+          metadata: {
+            ...result.task.metadata,
+            ...(reviewPrompt ? { initialPrompt: reviewPrompt } : {}),
+          },
         };
         handleOpenExternalTask(task);
       } else if (result.success && result.worktree) {
@@ -297,7 +311,11 @@ const OpenPrsSection: React.FC<OpenPrsSectionProps> = ({ projectPath, projectId 
           path: result.worktree.path || '',
           status: 'active',
           useWorktree: true,
-          metadata: { prNumber: pr.number, prTitle: pr.title },
+          metadata: {
+            prNumber: pr.number,
+            prTitle: pr.title,
+            ...(reviewPrompt ? { initialPrompt: reviewPrompt } : {}),
+          },
         };
         handleOpenExternalTask(task);
       } else {

@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AgentSelector } from './AgentSelector';
-import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { Switch } from './ui/switch';
-import { Textarea } from './ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import type { Agent } from '../types';
+import type { CatalogSkill } from '@shared/skills/types';
 import { isValidProviderId } from '@shared/providers/registry';
 import {
   DEFAULT_REVIEW_AGENT,
@@ -19,8 +19,26 @@ const DEFAULT_REVIEW_SETTINGS: ReviewSettings = {
   prompt: DEFAULT_REVIEW_PROMPT,
 };
 
+const NONE_VALUE = '__none__';
+
 const ReviewAgentSettingsCard: React.FC = () => {
   const { settings, updateSettings, isLoading: loading, isSaving: saving } = useAppSettings();
+  const [installedSkills, setInstalledSkills] = useState<CatalogSkill[]>([]);
+
+  const loadInstalledSkills = useCallback(async () => {
+    try {
+      const result = await window.electronAPI.skillsGetCatalog();
+      if (result.success && result.data) {
+        setInstalledSkills(result.data.skills.filter((s) => s.installed));
+      }
+    } catch {
+      // Ignore — dropdown will just be empty
+    }
+  }, []);
+
+  useEffect(() => {
+    loadInstalledSkills();
+  }, [loadInstalledSkills]);
 
   const reviewSettings = useMemo<ReviewSettings>(() => {
     const configured = settings?.review;
@@ -33,24 +51,28 @@ const ReviewAgentSettingsCard: React.FC = () => {
         typeof configured?.prompt === 'string' && configured.prompt.trim()
           ? configured.prompt
           : DEFAULT_REVIEW_SETTINGS.prompt,
+      skillId:
+        typeof configured?.skillId === 'string' && configured.skillId.trim()
+          ? configured.skillId
+          : undefined,
     };
   }, [settings?.review]);
 
-  const [promptDraft, setPromptDraft] = useState(reviewSettings.prompt);
+  const [selectedSkillId, setSelectedSkillId] = useState<string>(
+    reviewSettings.skillId || NONE_VALUE
+  );
 
   useEffect(() => {
-    setPromptDraft(reviewSettings.prompt);
-  }, [reviewSettings.prompt]);
+    setSelectedSkillId(reviewSettings.skillId || NONE_VALUE);
+  }, [reviewSettings.skillId]);
 
-  const handlePromptBlur = () => {
-    const nextPrompt = promptDraft.trim() || DEFAULT_REVIEW_PROMPT;
-    if (nextPrompt === reviewSettings.prompt) {
-      if (promptDraft !== reviewSettings.prompt) {
-        setPromptDraft(reviewSettings.prompt);
-      }
-      return;
+  const handleSkillChange = (value: string) => {
+    setSelectedSkillId(value);
+    if (value === NONE_VALUE) {
+      updateSettings({ review: { skillId: '' } });
+    } else {
+      updateSettings({ review: { skillId: value } });
     }
-    updateSettings({ review: { prompt: nextPrompt } });
   };
 
   return (
@@ -90,35 +112,33 @@ const ReviewAgentSettingsCard: React.FC = () => {
       </div>
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between gap-4">
-          <Label htmlFor="review-prompt" className="text-sm font-medium text-foreground">
-            Review prompt
-          </Label>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            disabled={loading || saving}
-            onClick={() => {
-              setPromptDraft(DEFAULT_REVIEW_PROMPT);
-              updateSettings({ review: { prompt: DEFAULT_REVIEW_PROMPT } });
-            }}
-          >
-            Reset
-          </Button>
-        </div>
-        <Textarea
-          id="review-prompt"
-          value={promptDraft}
+        <Label htmlFor="review-skill" className="text-sm font-medium text-foreground">
+          Review skill
+        </Label>
+        <Select
+          value={selectedSkillId}
+          onValueChange={handleSkillChange}
           disabled={loading || saving}
-          onChange={(event) => setPromptDraft(event.target.value)}
-          onBlur={handlePromptBlur}
-          rows={5}
-          className="min-h-[120px] resize-y"
-        />
+        >
+          <SelectTrigger id="review-skill" className="w-full">
+            <SelectValue placeholder="None (use default prompt)" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE_VALUE}>None (use default prompt)</SelectItem>
+            {installedSkills.map((skill) => (
+              <SelectItem key={skill.id} value={skill.id}>
+                {skill.displayName || skill.id}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <p className="text-xs text-muted-foreground">
-          This prompt is sent only for the review preset. Regular extra chat tabs stay unchanged.
+          Pick an installed skill to run as the review command. When set, clicking Review on a PR
+          will invoke{' '}
+          <code>
+            /{'{'}skillId{'}'} {'{'}pr-url{'}'}
+          </code>{' '}
+          in the terminal.
         </p>
       </div>
     </div>

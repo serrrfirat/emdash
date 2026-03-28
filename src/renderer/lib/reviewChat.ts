@@ -21,6 +21,10 @@ export function getReviewSettings(settings?: AppSettings): ReviewSettings {
       typeof configured?.prompt === 'string' && configured.prompt.trim()
         ? configured.prompt.trim()
         : DEFAULT_REVIEW_PROMPT,
+    skillId:
+      typeof configured?.skillId === 'string' && configured.skillId.trim()
+        ? configured.skillId.trim()
+        : undefined,
   };
 }
 

@@ -130,6 +130,10 @@ const ReviewAgentSettingsCard: React.FC = () => {
                 {skill.displayName || skill.id}
               </SelectItem>
             ))}
+            {selectedSkillId !== NONE_VALUE &&
+              !installedSkills.some((s) => s.id === selectedSkillId) && (
+                <SelectItem value={selectedSkillId}>{selectedSkillId}</SelectItem>
+              )}
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">

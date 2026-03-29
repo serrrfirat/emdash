@@ -107,8 +107,8 @@ const MainContentArea: React.FC<MainContentAreaProps> = ({
   if (selectedProject) {
     return (
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        {activeTask ? (
-          (activeTask.metadata as any)?.multiAgent?.enabled ? (
+        {activeTask &&
+          ((activeTask.metadata as any)?.multiAgent?.enabled ? (
             <MultiAgentTask
               task={activeTask}
               projectName={selectedProject.name}
@@ -133,8 +133,8 @@ const MainContentArea: React.FC<MainContentAreaProps> = ({
               onTaskInterfaceReady={onTaskInterfaceReady}
               onRenameTask={onRenameTask}
             />
-          )
-        ) : (
+          ))}
+        <div className={activeTask ? 'hidden' : 'contents'}>
           <ProjectMainView
             project={selectedProject}
             onCreateTask={() => openTaskModal()}
@@ -148,7 +148,7 @@ const MainContentArea: React.FC<MainContentAreaProps> = ({
             isLoadingBranches={isLoadingBranches}
             onBaseBranchChange={setProjectDefaultBranch}
           />
-        )}
+        </div>
 
         {isCreatingTask && (
           <div className="absolute inset-0 z-10 bg-background">

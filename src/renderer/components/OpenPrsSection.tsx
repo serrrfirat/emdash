@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   usePullRequests,
   type PullRequestSummary,
@@ -38,8 +38,6 @@ interface OpenPrsSectionProps {
 }
 
 const DEFAULT_VISIBLE = 10;
-const PR_RESULT_ROW_HEIGHT_PX = 72;
-const PR_RESULTS_MIN_HEIGHT_PX = DEFAULT_VISIBLE * PR_RESULT_ROW_HEIGHT_PX;
 const prBadgeClass =
   'inline-flex items-center gap-1 rounded border border-border bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground';
 const filterTabBadgeClass =
@@ -336,6 +334,35 @@ const OpenPrsSection: React.FC<OpenPrsSectionProps> = ({ projectPath, projectId 
     }
   };
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const savedScrollTop = useRef(0);
+
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const el = e.currentTarget;
+      savedScrollTop.current = el.scrollTop;
+      if (!hasMore || loadingMore) return;
+      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 50) {
+        void loadMore();
+      }
+    },
+    [hasMore, loadingMore, loadMore]
+  );
+
+  // Restore scroll position when the container becomes visible again
+  // (e.g. after navigating back from a task review)
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      if (el.clientHeight > 0 && savedScrollTop.current > 0) {
+        el.scrollTop = savedScrollTop.current;
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   if (!hasFetched && loading && prs.length === 0 && !appliedQuery) {
     return null;
   }
@@ -429,7 +456,7 @@ const OpenPrsSection: React.FC<OpenPrsSectionProps> = ({ projectPath, projectId 
               <code>author:@me</code>, <code>draft:true</code>, or free-text terms.
             </p>
 
-            <div className="flex flex-col" style={{ minHeight: `${PR_RESULTS_MIN_HEIGHT_PX}px` }}>
+            <div ref={scrollContainerRef} className="flex max-h-[600px] flex-col overflow-y-auto" onScroll={handleScroll}>
               {loading && prs.length === 0 ? (
                 <div className="flex min-h-full flex-1 items-center justify-center rounded-lg border border-dashed border-border/70 bg-muted/10 px-4 py-4">
                   <p className="text-center text-sm text-muted-foreground">
@@ -557,6 +584,11 @@ const OpenPrsSection: React.FC<OpenPrsSectionProps> = ({ projectPath, projectId 
                       </div>
                     </div>
                   ))}
+                  {loadingMore && (
+                    <div className="flex items-center justify-center border-t border-border px-4 py-3">
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex min-h-full flex-1 items-center justify-center rounded-lg border border-dashed border-border/70 bg-muted/10 px-4 py-4">
@@ -566,20 +598,6 @@ const OpenPrsSection: React.FC<OpenPrsSectionProps> = ({ projectPath, projectId 
                 </div>
               )}
             </div>
-
-            {hasMore ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="mx-auto h-8 gap-2 text-sm text-muted-foreground"
-                disabled={loadingMore}
-                onClick={() => void loadMore()}
-              >
-                {loadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                {loadingMore ? 'Loading PRs...' : `Load more PRs (${prs.length}/${totalCount})`}
-              </Button>
-            ) : null}
           </div>
         </TooltipProvider>
       )}

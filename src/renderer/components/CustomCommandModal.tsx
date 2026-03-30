@@ -5,6 +5,7 @@ import { X, RotateCcw, Info, Plus, Trash2 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { Switch } from './ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { PROVIDERS, type ProviderDefinition } from '@shared/providers/registry';
 import type { ProviderCustomConfig } from '../types/electron-api';
@@ -25,6 +26,7 @@ type FormState = {
   autoApproveFlag: string;
   initialPromptFlag: string;
   envEntries: EnvEntry[];
+  autoApproveByDefault: boolean;
 };
 
 const getDefaultFromProvider = (provider: ProviderDefinition | undefined): FormState => ({
@@ -35,6 +37,7 @@ const getDefaultFromProvider = (provider: ProviderDefinition | undefined): FormS
   autoApproveFlag: provider?.autoApproveFlag ?? '',
   initialPromptFlag: provider?.initialPromptFlag ?? '',
   envEntries: [],
+  autoApproveByDefault: false,
 });
 
 const CustomCommandModal: React.FC<CustomCommandModalProps> = ({ isOpen, onClose, providerId }) => {
@@ -87,6 +90,7 @@ const CustomCommandModal: React.FC<CustomCommandModalProps> = ({ isOpen, onClose
             autoApproveFlag: result.config.autoApproveFlag ?? defaults.autoApproveFlag,
             initialPromptFlag: result.config.initialPromptFlag ?? defaults.initialPromptFlag,
             envEntries,
+            autoApproveByDefault: result.config.autoApproveByDefault ?? false,
           });
           setHasCustomConfig(true);
         } else {
@@ -150,7 +154,8 @@ const CustomCommandModal: React.FC<CustomCommandModalProps> = ({ isOpen, onClose
         form.extraArgs === '' &&
         form.autoApproveFlag === defaults.autoApproveFlag &&
         form.initialPromptFlag === defaults.initialPromptFlag &&
-        form.envEntries.every((e) => !e.key.trim());
+        form.envEntries.every((e) => !e.key.trim()) &&
+        !form.autoApproveByDefault;
 
       if (isDefault) {
         await window.electronAPI.updateProviderCustomConfig?.(providerId, undefined);
@@ -164,6 +169,7 @@ const CustomCommandModal: React.FC<CustomCommandModalProps> = ({ isOpen, onClose
           autoApproveFlag: form.autoApproveFlag,
           initialPromptFlag: form.initialPromptFlag,
           env: Object.keys(envRecord).length > 0 ? envRecord : undefined,
+          autoApproveByDefault: form.autoApproveByDefault || undefined,
         };
         await window.electronAPI.updateProviderCustomConfig?.(providerId, config);
         setHasCustomConfig(true);
@@ -198,7 +204,8 @@ const CustomCommandModal: React.FC<CustomCommandModalProps> = ({ isOpen, onClose
       form.extraArgs !== '' ||
       form.autoApproveFlag !== defaults.autoApproveFlag ||
       form.initialPromptFlag !== defaults.initialPromptFlag ||
-      hasEnv
+      hasEnv ||
+      form.autoApproveByDefault
     );
   }, [form, defaults, hasCustomConfig]);
 
@@ -409,6 +416,27 @@ const CustomCommandModal: React.FC<CustomCommandModalProps> = ({ isOpen, onClose
                       className="font-mono text-sm"
                     />
                   </div>
+
+                  {/* Auto-approve by default toggle */}
+                  {provider.autoApproveFlag && (
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex flex-1 flex-col gap-0.5">
+                        <div className="flex items-center gap-2">
+                          <Label className="text-sm font-medium">Auto-approve by default</Label>
+                          <FieldTooltip content="Automatically enable auto-approve for new tasks using this agent" />
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Pre-check the auto-approve option when creating tasks with this agent.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={form.autoApproveByDefault}
+                        onCheckedChange={(checked) =>
+                          setForm((prev) => ({ ...prev, autoApproveByDefault: checked }))
+                        }
+                      />
+                    </div>
+                  )}
 
                   {/* Preview */}
                   <div className="mt-6 rounded-lg border border-border/60 bg-muted/30 p-4">

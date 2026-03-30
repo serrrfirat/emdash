@@ -939,7 +939,8 @@ const ChatInterface: React.FC<Props> = ({
   const { settings: autoApproveSettings } = useAppSettings();
   const autoApproveEnabled =
     (Boolean(task.metadata?.autoApprove) ||
-      Boolean(autoApproveSettings?.tasks?.autoApproveByDefault)) &&
+      Boolean(autoApproveSettings?.tasks?.autoApproveByDefault) ||
+      Boolean(autoApproveSettings?.providerConfigs?.[agent]?.autoApproveByDefault)) &&
     Boolean(agentMeta[agent]?.autoApproveFlag);
 
   const isMainConversation = activeConversationId === mainConversationId;

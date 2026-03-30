@@ -317,8 +317,10 @@ const TaskModal: React.FC<TaskModalProps> = ({ onClose, initialProject, onCreate
         : DEFAULT_AGENT;
       setAgentRuns([{ agent, runs: 1 }]);
 
-      const autoApproveByDefault = settings?.tasks?.autoApproveByDefault ?? false;
-      setAutoApprove(autoApproveByDefault && !!agentMeta[agent]?.autoApproveFlag);
+      const autoApproveByDefault =
+        settings?.tasks?.autoApproveByDefault ||
+        settings?.providerConfigs?.[agent]?.autoApproveByDefault;
+      setAutoApprove(!!autoApproveByDefault && !!agentMeta[agent]?.autoApproveFlag);
 
       const createWorktreeByDefault = settings?.tasks?.createWorktreeByDefault ?? true;
       setUseWorktree(createWorktreeByDefault);

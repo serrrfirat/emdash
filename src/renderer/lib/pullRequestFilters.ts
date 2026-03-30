@@ -1,4 +1,11 @@
-export type PullRequestFilterId = 'all' | 'needs-review' | 'my-prs' | 'draft' | 'custom';
+export type PullRequestFilterId =
+  | 'all'
+  | 'needs-review'
+  | 'my-prs'
+  | 'draft'
+  | 'approved'
+  | 'commented-by-me'
+  | 'custom';
 
 export interface PullRequestFilterPreset {
   id: Exclude<PullRequestFilterId, 'custom'>;
@@ -11,6 +18,8 @@ export const PULL_REQUEST_FILTER_PRESETS: PullRequestFilterPreset[] = [
   { id: 'needs-review', label: 'Needs My Review', query: 'review-requested:@me draft:false' },
   { id: 'my-prs', label: 'My PRs', query: 'author:@me' },
   { id: 'draft', label: 'Draft', query: 'draft:true' },
+  { id: 'approved', label: 'Approved', query: 'review:approved' },
+  { id: 'commented-by-me', label: 'Commented by Me', query: 'commenter:@me' },
 ];
 
 export function normalizePullRequestSearchQuery(query?: string | null): string {

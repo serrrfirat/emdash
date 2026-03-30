@@ -85,6 +85,7 @@ export interface ProviderCustomConfig {
   initialPromptFlag?: string;
   extraArgs?: string;
   env?: Record<string, string>;
+  autoApproveByDefault?: boolean;
 }
 
 export type ProviderCustomConfigs = Record<string, ProviderCustomConfig>;
@@ -587,6 +588,9 @@ export function normalizeSettings(input: AppSettings): AppSettings {
             : {}),
           ...(typeof c.extraArgs === 'string' ? { extraArgs: c.extraArgs } : {}),
           ...(env ? { env } : {}),
+          ...(typeof c.autoApproveByDefault === 'boolean'
+            ? { autoApproveByDefault: c.autoApproveByDefault }
+            : {}),
         };
       }
     }

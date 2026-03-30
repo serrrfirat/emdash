@@ -23,6 +23,7 @@ export type ProviderCustomConfig = {
   initialPromptFlag?: string;
   extraArgs?: string;
   env?: Record<string, string>;
+  autoApproveByDefault?: boolean;
 };
 
 export type ProviderCustomConfigs = Record<string, ProviderCustomConfig>;

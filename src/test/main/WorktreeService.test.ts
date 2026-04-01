@@ -397,4 +397,132 @@ describe('WorktreeService', () => {
       expect(upstream).toBe(`origin/${branchName}`);
     });
   });
+
+  describe('removeWorktree delete modes', () => {
+    let tempDir: string;
+    let mainRepo: string;
+    let service: Awaited<typeof import('../../main/services/WorktreeService')>['worktreeService'];
+
+    beforeEach(async () => {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'worktree-remove-test-'));
+      mainRepo = path.join(tempDir, 'main-repo');
+
+      fs.mkdirSync(mainRepo);
+
+      execSync('git init -b main', { cwd: mainRepo, stdio: 'pipe' });
+      execSync('git config user.email "test@test.com"', { cwd: mainRepo, stdio: 'pipe' });
+      execSync('git config user.name "Test"', { cwd: mainRepo, stdio: 'pipe' });
+
+      fs.writeFileSync(path.join(mainRepo, 'README.md'), '# Test');
+      execSync('git add README.md', { cwd: mainRepo, stdio: 'pipe' });
+      execSync('git commit -m "init"', { cwd: mainRepo, stdio: 'pipe' });
+
+      const originPath = path.join(tempDir, 'origin');
+      fs.mkdirSync(originPath);
+      execSync('git init --bare', { cwd: originPath, stdio: 'pipe' });
+      execFileSync('git', ['remote', 'add', 'origin', originPath], {
+        cwd: mainRepo,
+        stdio: 'pipe',
+      });
+      execSync('git push -u origin main', { cwd: mainRepo, stdio: 'pipe' });
+
+      vi.resetModules();
+      const mod = await import('../../main/services/WorktreeService');
+      service = mod.worktreeService;
+    });
+
+    afterEach(() => {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    async function createPushedWorktree(branchName: string): Promise<{ worktreePath: string }> {
+      const worktreePath = path.join(tempDir, branchName);
+      execFileSync(
+        'git',
+        ['worktree', 'add', '--no-track', '-b', branchName, worktreePath, 'origin/main'],
+        { cwd: mainRepo, stdio: 'pipe' }
+      );
+
+      fs.writeFileSync(path.join(worktreePath, 'feature.txt'), branchName);
+      execSync('git add feature.txt', { cwd: worktreePath, stdio: 'pipe' });
+      execSync(`git commit -m "${branchName}"`, { cwd: worktreePath, stdio: 'pipe' });
+      execFileSync('git', ['push', '--set-upstream', 'origin', branchName], {
+        cwd: worktreePath,
+        stdio: 'pipe',
+      });
+
+      return { worktreePath };
+    }
+
+    function remoteBranchExists(branchName: string): boolean {
+      const output = execFileSync('git', ['ls-remote', '--heads', 'origin', branchName], {
+        cwd: mainRepo,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+      return output.length > 0;
+    }
+
+    function localBranchExists(branchName: string): boolean {
+      try {
+        execFileSync('git', ['rev-parse', '--verify', `refs/heads/${branchName}`], {
+          cwd: mainRepo,
+          stdio: 'pipe',
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    it('keeps the remote branch when removing a worktree in local-only mode', async () => {
+      const branchName = 'keep-remote-branch';
+      const { worktreePath } = await createPushedWorktree(branchName);
+
+      expect(remoteBranchExists(branchName)).toBe(true);
+      expect(localBranchExists(branchName)).toBe(true);
+
+      await service.removeWorktree(
+        mainRepo,
+        'wt-keep-remote',
+        worktreePath,
+        branchName,
+        'local-only'
+      );
+
+      expect(fs.existsSync(worktreePath)).toBe(false);
+      expect(localBranchExists(branchName)).toBe(false);
+      expect(remoteBranchExists(branchName)).toBe(true);
+    });
+
+    it('defaults to keeping the remote branch when delete mode is omitted', async () => {
+      const branchName = 'keep-remote-by-default';
+      const { worktreePath } = await createPushedWorktree(branchName);
+
+      expect(remoteBranchExists(branchName)).toBe(true);
+
+      await service.removeWorktree(mainRepo, 'wt-default-keep-remote', worktreePath, branchName);
+
+      expect(localBranchExists(branchName)).toBe(false);
+      expect(remoteBranchExists(branchName)).toBe(true);
+    });
+
+    it('deletes the remote branch when removing a worktree in local-and-remote mode', async () => {
+      const branchName = 'delete-remote-branch';
+      const { worktreePath } = await createPushedWorktree(branchName);
+
+      expect(remoteBranchExists(branchName)).toBe(true);
+
+      await service.removeWorktree(
+        mainRepo,
+        'wt-delete-remote',
+        worktreePath,
+        branchName,
+        'local-and-remote'
+      );
+
+      expect(localBranchExists(branchName)).toBe(false);
+      expect(remoteBranchExists(branchName)).toBe(false);
+    });
+  });
 });

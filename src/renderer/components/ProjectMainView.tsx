@@ -36,6 +36,7 @@ import {
   AlertDialogTitle,
 } from './ui/alert-dialog';
 import { Checkbox } from './ui/checkbox';
+import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import BaseBranchControls from './BaseBranchControls';
 import { pickDefaultBranch, type BranchOption } from './BranchSelect';
 import { ConfigEditorModal } from './ConfigEditorModal';
@@ -59,31 +60,16 @@ import type { Project, Task } from '../types/app';
 import { useTaskManagementContext } from '../contexts/TaskManagementContext';
 import OpenPrsSection from './OpenPrsSection';
 import { TaskStatusIndicator } from './TaskStatusIndicator';
+import {
+  DEFAULT_TASK_DELETE_MODE,
+  hasDeleteRiskForMode,
+  type TaskDeleteMode,
+} from '../lib/taskDeleteMode';
 
 const normalizeBaseRef = (ref?: string | null): string | undefined => {
   if (!ref) return undefined;
   const trimmed = ref.trim();
   return trimmed.length > 0 ? trimmed : undefined;
-};
-
-const hasDeleteRisk = (status?: {
-  staged: number;
-  unstaged: number;
-  untracked: number;
-  ahead: number;
-  behind: number;
-  error?: string;
-  pr?: PrInfo | null;
-}): boolean => {
-  if (!status) return false;
-  return (
-    status.staged > 0 ||
-    status.unstaged > 0 ||
-    status.untracked > 0 ||
-    status.ahead > 0 ||
-    !!status.error ||
-    !!(status.pr && isActivePr(status.pr))
-  );
 };
 
 function TaskRow({
@@ -97,17 +83,19 @@ function TaskRow({
   isSelected,
   onToggleSelect,
   enablePrStatus = true,
+  allowRemoteBranchDelete = false,
 }: {
   ws: Task;
   active: boolean;
   onClick: () => void;
-  onDelete: () => void | Promise<void | boolean>;
+  onDelete: (mode: TaskDeleteMode) => void | Promise<void | boolean>;
   onArchive?: () => void | Promise<void | boolean>;
   onRestore?: () => void | Promise<void>;
   isSelectMode?: boolean;
   isSelected?: boolean;
   onToggleSelect?: () => void;
   enablePrStatus?: boolean;
+  allowRemoteBranchDelete?: boolean;
 }) {
   const isArchived = Boolean(ws.archivedAt);
   const isBusy = useTaskBusy(ws.id);
@@ -289,14 +277,15 @@ function TaskRow({
                 taskId={ws.id}
                 taskPath={ws.path}
                 useWorktree={ws.useWorktree}
-                onConfirm={async () => {
+                onConfirm={async (mode) => {
                   try {
                     setIsDeleting(true);
-                    await onDelete();
+                    await onDelete(mode);
                   } finally {
                     setIsDeleting(false);
                   }
                 }}
+                allowRemoteBranchDelete={allowRemoteBranchDelete && ws.useWorktree !== false}
                 isDeleting={isDeleting}
                 aria-label={`Delete task ${ws.name}`}
                 className="text-muted-foreground"
@@ -317,12 +306,12 @@ interface ProjectMainViewProps {
   onDeleteTask: (
     project: Project,
     task: Task,
-    options?: { silent?: boolean }
+    options?: { silent?: boolean; deleteMode?: TaskDeleteMode }
   ) => void | Promise<void | boolean>;
   onArchiveTask?: (
     project: Project,
     task: Task,
-    options?: { silent?: boolean }
+    options?: { silent?: boolean; deleteMode?: TaskDeleteMode }
   ) => void | Promise<void | boolean>;
   onRestoreTask?: (project: Project, task: Task) => void | Promise<void>;
   onDeleteProject?: (project: Project) => void | Promise<void>;
@@ -364,6 +353,7 @@ const ProjectMainView: React.FC<ProjectMainViewProps> = ({
   const [requiresDeleteAcknowledge, setRequiresDeleteAcknowledge] = useState(false);
   const [showDeleteWarnings, setShowDeleteWarnings] = useState(false);
   const [showDeleteActionSpinner, setShowDeleteActionSpinner] = useState(false);
+  const [bulkDeleteMode, setBulkDeleteMode] = useState<TaskDeleteMode>(DEFAULT_TASK_DELETE_MODE);
   const [showConfigEditor, setShowConfigEditor] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
   const [showFilter, setShowFilter] = useState<'active' | 'all'>('active');
@@ -492,7 +482,10 @@ const ProjectMainView: React.FC<ProjectMainViewProps> = ({
     const deletedNames: string[] = [];
     for (const ws of toDelete) {
       try {
-        const result = await onDeleteTask(project, ws, { silent: true });
+        const result = await onDeleteTask(project, ws, {
+          silent: true,
+          deleteMode: bulkDeleteMode,
+        });
         if (result !== false) {
           deletedNames.push(ws.name);
         }
@@ -524,6 +517,7 @@ const ProjectMainView: React.FC<ProjectMainViewProps> = ({
     selectedIds,
     tasksInProject,
     toast,
+    bulkDeleteMode,
   ]);
 
   const handleConfirmBulkDelete = useCallback(
@@ -546,7 +540,7 @@ const ProjectMainView: React.FC<ProjectMainViewProps> = ({
         const needsForceRefresh = deleteRiskTargets.some((target) => {
           const status = deleteStatus[target.id];
           if (!status) return true;
-          if (hasDeleteRisk(status)) return true;
+          if (hasDeleteRiskForMode(status, bulkDeleteMode)) return true;
           if (!status.prKnown) return true;
           const scannedAt = deleteRiskScannedAt[target.id] ?? 0;
           return scannedAt <= 0 || now - scannedAt > DELETE_RISK_SCAN_FRESH_MS;
@@ -555,7 +549,9 @@ const ProjectMainView: React.FC<ProjectMainViewProps> = ({
         const latestRisks = needsForceRefresh
           ? await refreshDeleteRisks({ force: true })
           : deleteStatus;
-        const hasRisks = deleteRiskTargets.some((target) => hasDeleteRisk(latestRisks[target.id]));
+        const hasRisks = deleteRiskTargets.some((target) =>
+          hasDeleteRiskForMode(latestRisks[target.id], bulkDeleteMode)
+        );
         setRequiresDeleteAcknowledge(hasRisks);
         setShowDeleteWarnings(hasRisks);
 
@@ -576,6 +572,7 @@ const ProjectMainView: React.FC<ProjectMainViewProps> = ({
     },
     [
       acknowledgeDirtyDelete,
+      bulkDeleteMode,
       deleteRiskTargets,
       deleteRiskScannedAt,
       deleteStatus,
@@ -664,9 +661,9 @@ const ProjectMainView: React.FC<ProjectMainViewProps> = ({
   };
 
   const handleDeleteTask = useCallback(
-    async (task: Task) => {
+    async (task: Task, deleteMode: TaskDeleteMode = DEFAULT_TASK_DELETE_MODE) => {
       const wasArchived = Boolean(task.archivedAt);
-      const result = await onDeleteTask(project, task);
+      const result = await onDeleteTask(project, task, { deleteMode });
 
       if (wasArchived && result !== false) {
         refetchArchivedTasks();
@@ -723,6 +720,7 @@ const ProjectMainView: React.FC<ProjectMainViewProps> = ({
       setShowDeleteWarnings(false);
       setIsCheckingDeleteRisks(false);
       setShowDeleteActionSpinner(false);
+      setBulkDeleteMode(DEFAULT_TASK_DELETE_MODE);
     }
   }, [showDeleteDialog]);
 
@@ -1035,10 +1033,11 @@ const ProjectMainView: React.FC<ProjectMainViewProps> = ({
                           onToggleSelect={() => toggleSelect(ws.id)}
                           active={activeTask?.id === ws.id}
                           onClick={() => onSelectTask(ws)}
-                          onDelete={() => handleDeleteTask(ws)}
+                          onDelete={(mode) => handleDeleteTask(ws, mode)}
                           onArchive={onArchiveTask ? () => handleArchiveTask(ws) : undefined}
                           enablePrStatus={!project.isRemote}
                           onRestore={ws.archivedAt ? () => handleRestoreTask(ws) : undefined}
+                          allowRemoteBranchDelete={!project.isRemote}
                         />
                       ))}
                     </div>
@@ -1082,13 +1081,61 @@ const ProjectMainView: React.FC<ProjectMainViewProps> = ({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-3">
+            {!project.isRemote && deleteRiskTargets.length > 0 ? (
+              <div className="space-y-2 rounded-md border border-border/70 bg-muted/20 px-3 py-3 text-sm">
+                <div className="font-medium text-foreground">Delete mode</div>
+                <RadioGroup
+                  value={bulkDeleteMode}
+                  onValueChange={(value) => setBulkDeleteMode(value as TaskDeleteMode)}
+                  className="gap-2"
+                >
+                  <label
+                    htmlFor="bulk-delete-mode-local"
+                    className="flex cursor-pointer items-start gap-3 rounded-md border border-border/70 bg-background px-3 py-2"
+                  >
+                    <RadioGroupItem
+                      value="local-only"
+                      id="bulk-delete-mode-local"
+                      className="mt-0.5"
+                    />
+                    <div className="min-w-0">
+                      <div className="font-medium text-foreground">Delete local tasks only</div>
+                      <div className="text-muted-foreground">
+                        Keep remote branches and PRs for the selected tasks.
+                      </div>
+                    </div>
+                  </label>
+                  <label
+                    htmlFor="bulk-delete-mode-remote"
+                    className="flex cursor-pointer items-start gap-3 rounded-md border border-border/70 bg-background px-3 py-2"
+                  >
+                    <RadioGroupItem
+                      value="local-and-remote"
+                      id="bulk-delete-mode-remote"
+                      className="mt-0.5"
+                    />
+                    <div className="min-w-0">
+                      <div className="font-medium text-foreground">Delete branches everywhere</div>
+                      <div className="text-muted-foreground">
+                        Also delete remote branches for the selected tasks.
+                      </div>
+                    </div>
+                  </label>
+                </RadioGroup>
+              </div>
+            ) : null}
             <AnimatePresence initial={false}>
               {(() => {
                 const tasksWithUncommittedWorkOnly = selectedTasks.filter((ws) => {
-                  const summary = deleteRisks.summaries[ws.id];
                   const status = deleteStatus[ws.id];
-                  if (!summary && !status?.error) return false;
-                  if (status?.pr && isActivePr(status.pr)) return false;
+                  if (!hasDeleteRiskForMode(status, bulkDeleteMode)) return false;
+                  if (
+                    bulkDeleteMode === 'local-and-remote' &&
+                    status?.pr &&
+                    isActivePr(status.pr)
+                  ) {
+                    return false;
+                  }
                   return true;
                 });
 
@@ -1133,7 +1180,9 @@ const ProjectMainView: React.FC<ProjectMainViewProps> = ({
                 const prTasks = selectedTasks
                   .map((ws) => ({ name: ws.name, pr: deleteStatus[ws.id]?.pr }))
                   .filter((w) => w.pr && isActivePr(w.pr));
-                return showDeleteWarnings && prTasks.length ? (
+                return showDeleteWarnings &&
+                  bulkDeleteMode === 'local-and-remote' &&
+                  prTasks.length ? (
                   <motion.div
                     key="bulk-pr-notice"
                     initial={{ opacity: 0, y: 6, scale: 0.99 }}
@@ -1148,7 +1197,10 @@ const ProjectMainView: React.FC<ProjectMainViewProps> = ({
             </AnimatePresence>
 
             <AnimatePresence initial={false}>
-              {showDeleteWarnings && deleteRisks.riskyIds.size > 0 ? (
+              {showDeleteWarnings &&
+              deleteRiskTargets.some((target) =>
+                hasDeleteRiskForMode(deleteStatus[target.id], bulkDeleteMode)
+              ) ? (
                 <motion.label
                   key="bulk-ack"
                   className="flex items-start gap-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm"

@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trash, Folder } from 'lucide-react';
 import { Checkbox } from './ui/checkbox';
+import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { Spinner } from './ui/spinner';
 import {
   AlertDialog,
@@ -22,12 +23,17 @@ import { useToast } from '../hooks/use-toast';
 import DeletePrNotice from './DeletePrNotice';
 import DeleteRiskFileList from './DeleteRiskFileList';
 import { isActivePr } from '../lib/prStatus';
+import {
+  DEFAULT_TASK_DELETE_MODE,
+  hasDeleteRiskForMode,
+  type TaskDeleteMode,
+} from '../lib/taskDeleteMode';
 
 type Props = {
   taskName: string;
   taskId: string;
   taskPath: string;
-  onConfirm: () => void | Promise<void | boolean>;
+  onConfirm: (mode: TaskDeleteMode) => void | Promise<void | boolean>;
   className?: string;
   'aria-label'?: string;
   isDeleting?: boolean;
@@ -45,6 +51,8 @@ type Props = {
   onExternalOpenChange?: (open: boolean) => void;
   /** When true, the trigger button is hidden and only the dialog is rendered. */
   hideTrigger?: boolean;
+  allowRemoteBranchDelete?: boolean;
+  defaultDeleteMode?: TaskDeleteMode;
 };
 
 export const TaskDeleteButton: React.FC<Props> = ({
@@ -59,6 +67,8 @@ export const TaskDeleteButton: React.FC<Props> = ({
   externalOpen,
   onExternalOpenChange,
   hideTrigger = false,
+  allowRemoteBranchDelete = false,
+  defaultDeleteMode = DEFAULT_TASK_DELETE_MODE,
 }) => {
   const { toast } = useToast();
   const [internalOpen, setInternalOpen] = React.useState(false);
@@ -70,6 +80,7 @@ export const TaskDeleteButton: React.FC<Props> = ({
   const [requiresAcknowledge, setRequiresAcknowledge] = React.useState(false);
   const [isCheckingRisks, setIsCheckingRisks] = React.useState(false);
   const [showActionSpinner, setShowActionSpinner] = React.useState(false);
+  const [deleteMode, setDeleteMode] = React.useState<TaskDeleteMode>(defaultDeleteMode);
   const targets = useMemo(
     () => [{ id: taskId, name: taskName, path: taskPath }],
     [taskId, taskName, taskPath]
@@ -96,12 +107,7 @@ export const TaskDeleteButton: React.FC<Props> = ({
   // Tasks on main branch (useWorktree === false) are never considered risky
   // because they don't have worktree-specific changes that would be lost.
   const hasRisk = (targetStatus: typeof status): boolean =>
-    targetStatus.staged > 0 ||
-    targetStatus.unstaged > 0 ||
-    targetStatus.untracked > 0 ||
-    targetStatus.ahead > 0 ||
-    !!targetStatus.error ||
-    !!(targetStatus.pr && isActivePr(targetStatus.pr));
+    hasDeleteRiskForMode(targetStatus, deleteMode);
   const risky: boolean = useWorktree && hasRisk(status);
   const disableDelete: boolean =
     Boolean(isDeleting || isCheckingRisks) || (requiresAcknowledge && !acknowledge);
@@ -113,8 +119,9 @@ export const TaskDeleteButton: React.FC<Props> = ({
       setRequiresAcknowledge(false);
       setIsCheckingRisks(false);
       setShowActionSpinner(false);
+      setDeleteMode(defaultDeleteMode);
     }
-  }, [open]);
+  }, [defaultDeleteMode, open]);
 
   React.useEffect(() => {
     const busy = isDeleting || isCheckingRisks;
@@ -167,6 +174,49 @@ export const TaskDeleteButton: React.FC<Props> = ({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-3 text-sm">
+          {useWorktree && allowRemoteBranchDelete ? (
+            <div className="space-y-2 rounded-md border border-border/70 bg-muted/20 px-3 py-3">
+              <div className="text-sm font-medium text-foreground">Delete mode</div>
+              <RadioGroup
+                value={deleteMode}
+                onValueChange={(value) => setDeleteMode(value as TaskDeleteMode)}
+                className="gap-2"
+              >
+                <label
+                  htmlFor={`delete-mode-local-${taskId}`}
+                  className="flex cursor-pointer items-start gap-3 rounded-md border border-border/70 bg-background px-3 py-2"
+                >
+                  <RadioGroupItem
+                    value="local-only"
+                    id={`delete-mode-local-${taskId}`}
+                    className="mt-0.5"
+                  />
+                  <div className="min-w-0">
+                    <div className="font-medium text-foreground">Delete local task only</div>
+                    <div className="text-muted-foreground">
+                      Remove the task, worktree, and local branch. Keep the remote branch and PR.
+                    </div>
+                  </div>
+                </label>
+                <label
+                  htmlFor={`delete-mode-remote-${taskId}`}
+                  className="flex cursor-pointer items-start gap-3 rounded-md border border-border/70 bg-background px-3 py-2"
+                >
+                  <RadioGroupItem
+                    value="local-and-remote"
+                    id={`delete-mode-remote-${taskId}`}
+                    className="mt-0.5"
+                  />
+                  <div className="min-w-0">
+                    <div className="font-medium text-foreground">Delete branch everywhere</div>
+                    <div className="text-muted-foreground">
+                      Also delete the remote branch. This can close or detach an open PR.
+                    </div>
+                  </div>
+                </label>
+              </RadioGroup>
+            </div>
+          ) : null}
           <AnimatePresence initial={false}>
             {showWarnings && (requiresAcknowledge || risky) ? (
               <motion.div
@@ -200,6 +250,9 @@ export const TaskDeleteButton: React.FC<Props> = ({
                           status.behind > 0
                             ? `behind by ${status.behind} ${status.behind === 1 ? 'commit' : 'commits'}`
                             : null,
+                          deleteMode === 'local-and-remote' && status.pr && isActivePr(status.pr)
+                            ? 'PR open'
+                            : null,
                         ]
                           .filter(Boolean)
                           .join(', ') ||
@@ -210,7 +263,7 @@ export const TaskDeleteButton: React.FC<Props> = ({
                   </div>
                   <DeleteRiskFileList files={status.files} limit={6} />
                 </div>
-                {status.pr && isActivePr(status.pr) ? (
+                {deleteMode === 'local-and-remote' && status.pr && isActivePr(status.pr) ? (
                   <DeletePrNotice tasks={[{ name: taskName, pr: status.pr }]} />
                 ) : null}
               </motion.div>
@@ -282,7 +335,7 @@ export const TaskDeleteButton: React.FC<Props> = ({
               }
               setOpen(false);
               try {
-                await onConfirm();
+                await onConfirm(deleteMode);
               } catch {}
             }}
           >

@@ -14,6 +14,10 @@ import {
   isRemoteProject,
   resolveRemoteProjectForWorktreePath,
 } from '../utils/remoteProjectResolver';
+import {
+  DEFAULT_WORKTREE_DELETE_MODE,
+  type WorktreeDeleteMode,
+} from '../../shared/worktree/deleteMode';
 
 const remoteGitService = new RemoteGitService(sshService);
 
@@ -140,14 +144,20 @@ export function registerWorktreeIpc(): void {
     async (
       event,
       args: {
+        projectId?: string;
         projectPath: string;
         worktreeId: string;
         worktreePath?: string;
         branch?: string;
+        deleteMode?: WorktreeDeleteMode;
       }
     ) => {
       try {
-        const project = await resolveProjectByIdOrPath({ projectPath: args.projectPath });
+        const deleteMode = args.deleteMode ?? DEFAULT_WORKTREE_DELETE_MODE;
+        const project = await resolveProjectByIdOrPath({
+          projectId: args.projectId,
+          projectPath: args.projectPath,
+        });
         if (isRemoteProject(project)) {
           const pathToRemove = args.worktreePath;
           if (!pathToRemove) {
@@ -187,7 +197,8 @@ export function registerWorktreeIpc(): void {
           args.projectPath,
           args.worktreeId,
           args.worktreePath,
-          args.branch
+          args.branch,
+          deleteMode
         );
         return { success: true };
       } catch (error) {

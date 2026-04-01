@@ -11,6 +11,7 @@ import { useTaskStatus } from '../hooks/useTaskStatus';
 import { useTaskUnread } from '../hooks/useTaskUnread';
 import { normalizeTaskName, MAX_TASK_NAME_LENGTH } from '../lib/taskNames';
 import { normalizeSqliteTimestamp } from '../lib/utils';
+import type { TaskDeleteMode } from '../lib/taskDeleteMode';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -53,7 +54,7 @@ interface Task {
 
 interface TaskItemProps {
   task: Task;
-  onDelete?: () => void | Promise<void | boolean>;
+  onDelete?: (mode?: TaskDeleteMode) => void | Promise<void | boolean>;
   onArchive?: () => void | Promise<void | boolean>;
   onRename?: (newName: string) => void | Promise<void>;
   onPin?: () => void | Promise<void>;
@@ -61,6 +62,7 @@ interface TaskItemProps {
   showDelete?: boolean;
   showDirectBadge?: boolean;
   primaryAction?: 'delete' | 'archive';
+  allowRemoteBranchDelete?: boolean;
 }
 
 export const TaskItem: React.FC<TaskItemProps> = ({
@@ -73,6 +75,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({
   showDelete,
   showDirectBadge = true,
   primaryAction = 'delete',
+  allowRemoteBranchDelete = false,
 }) => {
   const { totalAdditions, totalDeletions, isLoading } = useTaskChanges(task.path, task.id);
   const { pr } = usePrStatus(task.path);
@@ -200,14 +203,15 @@ export const TaskItem: React.FC<TaskItemProps> = ({
               taskId={task.id}
               taskPath={task.path}
               useWorktree={task.useWorktree}
-              onConfirm={async () => {
+              onConfirm={async (mode) => {
                 try {
                   setIsDeleting(true);
-                  await onDelete();
+                  await onDelete(mode);
                 } finally {
                   setIsDeleting(false);
                 }
               }}
+              allowRemoteBranchDelete={allowRemoteBranchDelete && task.useWorktree !== false}
               isDeleting={isDeleting}
               aria-label={`Delete Task ${task.name}`}
               className={`!h-5 !w-5 text-muted-foreground ${isDeleting ? '' : 'opacity-0 group-hover/task:opacity-100'}`}
@@ -234,15 +238,16 @@ export const TaskItem: React.FC<TaskItemProps> = ({
                 taskId={task.id}
                 taskPath={task.path}
                 useWorktree={task.useWorktree}
-                onConfirm={async () => {
+                onConfirm={async (mode) => {
                   try {
                     setIsDeleting(true);
-                    await onDelete();
+                    await onDelete(mode);
                   } finally {
                     setIsDeleting(false);
                   }
                 }}
                 isDeleting={isDeleting}
+                allowRemoteBranchDelete={allowRemoteBranchDelete && task.useWorktree !== false}
                 hideTrigger
                 externalOpen={deleteDialogOpen}
                 onExternalOpenChange={setDeleteDialogOpen}

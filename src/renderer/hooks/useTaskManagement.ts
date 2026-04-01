@@ -3,6 +3,10 @@ import { useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TERMINAL_PROVIDER_IDS } from '../constants/agents';
 import { makePtyId } from '@shared/ptyId';
 import type { ProviderId } from '@shared/providers/registry';
+import {
+  DEFAULT_WORKTREE_DELETE_MODE,
+  type WorktreeDeleteMode,
+} from '../../shared/worktree/deleteMode';
 import { saveActiveIds, getStoredActiveIds } from '../constants/layout';
 import { getAgentForTask } from '../lib/getAgentForTask';
 import { disposeTaskTerminals } from '../lib/taskTerminalsStore';
@@ -25,6 +29,7 @@ import { useModalContext } from '../contexts/ModalProvider';
 
 const LIFECYCLE_TEARDOWN_TIMEOUT_MS = 15000;
 type LifecycleTarget = { taskId: string; taskPath: string; label: string };
+type TaskMutationOptions = { silent?: boolean; deleteMode?: WorktreeDeleteMode };
 
 const getLifecycleTaskIds = (task: Task): string[] => {
   const ids = new Set<string>([task.id]);
@@ -307,7 +312,7 @@ export function useTaskManagement() {
     targetProject: Project,
     task: Task,
     action: 'archive' | 'delete',
-    options?: { silent?: boolean }
+    options?: TaskMutationOptions
   ): Promise<void> => {
     const continueLabel = action === 'archive' ? 'archiving' : 'deletion';
     const lifecycleTargets = getLifecycleTargets(task);
@@ -475,7 +480,7 @@ export function useTaskManagement() {
     }: {
       project: Project;
       task: Task;
-      options?: { silent?: boolean };
+      options?: TaskMutationOptions;
     }) => {
       await runLifecycleTeardownBestEffort(project, task, 'delete', options);
 
@@ -561,6 +566,7 @@ export function useTaskManagement() {
               worktreePath: task.path,
               branch: task.branch,
               taskName: task.name,
+              deleteMode: options?.deleteMode ?? DEFAULT_WORKTREE_DELETE_MODE,
             })
           );
         }
@@ -631,11 +637,7 @@ export function useTaskManagement() {
   });
 
   const handleDeleteTask = useCallback(
-    async (
-      targetProject: Project,
-      task: Task,
-      options?: { silent?: boolean }
-    ): Promise<boolean> => {
+    async (targetProject: Project, task: Task, options?: TaskMutationOptions): Promise<boolean> => {
       if (deletingTaskIdsRef.current.has(task.id)) {
         toast({
           title: 'Deletion in progress',
@@ -664,7 +666,7 @@ export function useTaskManagement() {
     }: {
       project: Project;
       task: Task;
-      options?: { silent?: boolean };
+      options?: TaskMutationOptions;
     }) => {
       // PTY cleanup in background — don't block the UI
       void cleanupPtyResources(task);
@@ -719,11 +721,7 @@ export function useTaskManagement() {
   });
 
   const handleArchiveTask = useCallback(
-    async (
-      targetProject: Project,
-      task: Task,
-      options?: { silent?: boolean }
-    ): Promise<boolean> => {
+    async (targetProject: Project, task: Task, options?: TaskMutationOptions): Promise<boolean> => {
       if (archivingTaskIdsRef.current.has(task.id)) return false;
       try {
         await archiveTaskMutation.mutateAsync({ project: targetProject, task, options });

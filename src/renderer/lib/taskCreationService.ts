@@ -455,7 +455,11 @@ export async function createTask(params: CreateTaskParams): Promise<CreateTaskRe
       for (const variant of variants) {
         if (variant.worktreeId && !variant.worktreeId.startsWith('direct-')) {
           window.electronAPI
-            .worktreeRemove({ projectPath: project.path, worktreeId: variant.worktreeId })
+            .worktreeRemove({
+              projectPath: project.path,
+              worktreeId: variant.worktreeId,
+              deleteMode: 'local-and-remote',
+            })
             .catch(() => {});
         }
       }
@@ -500,7 +504,11 @@ export async function createTask(params: CreateTaskParams): Promise<CreateTaskRe
       for (const variant of variants) {
         if (variant.worktreeId && !variant.worktreeId.startsWith('direct-')) {
           window.electronAPI
-            .worktreeRemove({ projectPath: project.path, worktreeId: variant.worktreeId })
+            .worktreeRemove({
+              projectPath: project.path,
+              worktreeId: variant.worktreeId,
+              deleteMode: 'local-and-remote',
+            })
             .catch(() => {});
         }
       }

@@ -5,6 +5,7 @@ const ipcHandleHandlers = new Map<string, (...args: any[]) => any>();
 const claimReserveMock = vi.fn();
 const saveTaskMock = vi.fn();
 const getProjectByIdMock = vi.fn();
+const removeWorktreeMock = vi.fn();
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -18,7 +19,7 @@ vi.mock('../../main/services/WorktreeService', () => ({
   worktreeService: {
     createWorktree: vi.fn(),
     listWorktrees: vi.fn(),
-    removeWorktree: vi.fn(),
+    removeWorktree: (...args: any[]) => removeWorktreeMock(...args),
     getWorktreeStatus: vi.fn(),
     mergeWorktreeChanges: vi.fn(),
     getWorktree: vi.fn(),
@@ -259,5 +260,52 @@ describe('worktreeIpc claimReserveAndSaveTask', () => {
     });
     expect(claimReserveMock).not.toHaveBeenCalled();
     expect(saveTaskMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('worktreeIpc remove', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    ipcHandleHandlers.clear();
+  });
+
+  async function getHandler() {
+    const { registerWorktreeIpc } = await import('../../main/services/worktreeIpc');
+    registerWorktreeIpc();
+    const handler = ipcHandleHandlers.get('worktree:remove');
+    expect(handler).toBeTypeOf('function');
+    return handler!;
+  }
+
+  it('passes deleteMode through to the local worktree service', async () => {
+    const handler = await getHandler();
+
+    getProjectByIdMock.mockResolvedValue({
+      id: 'project-1',
+      isRemote: false,
+    });
+    removeWorktreeMock.mockResolvedValue(undefined);
+
+    const result = await handler(
+      {},
+      {
+        projectId: 'project-1',
+        projectPath: '/tmp/repo',
+        worktreeId: 'wt-123',
+        worktreePath: '/tmp/repo/.worktrees/task',
+        branch: 'feature/test',
+        deleteMode: 'local-only',
+      }
+    );
+
+    expect(removeWorktreeMock).toHaveBeenCalledWith(
+      '/tmp/repo',
+      'wt-123',
+      '/tmp/repo/.worktrees/task',
+      'feature/test',
+      'local-only'
+    );
+    expect(result).toEqual({ success: true });
   });
 });

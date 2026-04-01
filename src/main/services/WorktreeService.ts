@@ -7,6 +7,10 @@ import crypto from 'crypto';
 import { projectSettingsService } from './ProjectSettingsService';
 import { minimatch } from 'minimatch';
 import { errorTracking } from '../errorTracking';
+import {
+  DEFAULT_WORKTREE_DELETE_MODE,
+  type WorktreeDeleteMode,
+} from '../../shared/worktree/deleteMode';
 
 type BaseRefInfo = { remote: string; branch: string; fullRef: string };
 
@@ -61,13 +65,22 @@ interface EmdashConfig {
 export class WorktreeService {
   private worktrees = new Map<string, WorktreeInfo>();
 
+  private normalizeComparablePath(targetPath: string): string {
+    const resolved = path.resolve(targetPath);
+    try {
+      return fs.realpathSync.native ? fs.realpathSync.native(resolved) : fs.realpathSync(resolved);
+    } catch {
+      return resolved;
+    }
+  }
+
   private async cleanupWorktreeDirectory(pathToRemove: string, projectPath: string): Promise<void> {
     if (!fs.existsSync(pathToRemove)) {
       return;
     }
 
-    const normalizedPathToRemove = path.resolve(pathToRemove);
-    const normalizedProjectPath = path.resolve(projectPath);
+    const normalizedPathToRemove = this.normalizeComparablePath(pathToRemove);
+    const normalizedProjectPath = this.normalizeComparablePath(projectPath);
 
     if (normalizedPathToRemove === normalizedProjectPath) {
       log.error(`CRITICAL: Prevented filesystem removal of main repository! Path: ${pathToRemove}`);
@@ -405,7 +418,8 @@ export class WorktreeService {
     projectPath: string,
     worktreeId: string,
     worktreePath?: string,
-    branch?: string
+    branch?: string,
+    deleteMode: WorktreeDeleteMode = DEFAULT_WORKTREE_DELETE_MODE
   ): Promise<void> {
     try {
       const worktree = this.worktrees.get(worktreeId);
@@ -419,8 +433,8 @@ export class WorktreeService {
 
       // CRITICAL SAFETY CHECK: Prevent removing the main repository
       // Check if the path to remove is the same as the project path (main repo)
-      const normalizedPathToRemove = path.resolve(pathToRemove);
-      const normalizedProjectPath = path.resolve(projectPath);
+      const normalizedPathToRemove = this.normalizeComparablePath(pathToRemove);
+      const normalizedProjectPath = this.normalizeComparablePath(projectPath);
 
       if (normalizedPathToRemove === normalizedProjectPath) {
         log.error(
@@ -443,7 +457,7 @@ export class WorktreeService {
         for (let i = 0; i < lines.length; i++) {
           if (lines[i].startsWith('worktree ')) {
             const wtPath = lines[i].substring(9); // Remove "worktree " prefix
-            const normalizedWtPath = path.resolve(wtPath);
+            const normalizedWtPath = this.normalizeComparablePath(wtPath);
 
             if (normalizedWtPath === normalizedPathToRemove) {
               // Check if this is the main worktree (bare repos have no main worktree)
@@ -516,36 +530,40 @@ export class WorktreeService {
           }
         }
 
-        // Only try to delete remote branch if a remote exists
-        const remoteAlias = 'origin';
-        const hasRemote = await this.hasRemote(projectPath, remoteAlias);
-        if (hasRemote) {
-          let remoteBranchName = branchToDelete;
-          if (branchToDelete.startsWith('origin/')) {
-            remoteBranchName = branchToDelete.replace(/^origin\//, '');
-          }
-          try {
-            await execFileAsync('git', ['push', remoteAlias, '--delete', remoteBranchName], {
-              cwd: projectPath,
-            });
-            log.info(`Deleted remote branch ${remoteAlias}/${remoteBranchName}`);
-          } catch (remoteError: any) {
-            const msg = String(remoteError?.stderr || remoteError?.message || remoteError);
-            if (
-              /remote ref does not exist/i.test(msg) ||
-              /unknown revision/i.test(msg) ||
-              /not found/i.test(msg)
-            ) {
-              log.info(`Remote branch ${remoteAlias}/${remoteBranchName} already absent`);
-            } else {
-              log.warn(
-                `Failed to delete remote branch ${remoteAlias}/${remoteBranchName}:`,
-                remoteError
-              );
+        if (deleteMode === 'local-and-remote') {
+          // Only try to delete remote branch if a remote exists
+          const remoteAlias = 'origin';
+          const hasRemote = await this.hasRemote(projectPath, remoteAlias);
+          if (hasRemote) {
+            let remoteBranchName = branchToDelete;
+            if (branchToDelete.startsWith('origin/')) {
+              remoteBranchName = branchToDelete.replace(/^origin\//, '');
             }
+            try {
+              await execFileAsync('git', ['push', remoteAlias, '--delete', remoteBranchName], {
+                cwd: projectPath,
+              });
+              log.info(`Deleted remote branch ${remoteAlias}/${remoteBranchName}`);
+            } catch (remoteError: any) {
+              const msg = String(remoteError?.stderr || remoteError?.message || remoteError);
+              if (
+                /remote ref does not exist/i.test(msg) ||
+                /unknown revision/i.test(msg) ||
+                /not found/i.test(msg)
+              ) {
+                log.info(`Remote branch ${remoteAlias}/${remoteBranchName} already absent`);
+              } else {
+                log.warn(
+                  `Failed to delete remote branch ${remoteAlias}/${remoteBranchName}:`,
+                  remoteError
+                );
+              }
+            }
+          } else {
+            log.info(`Skipping remote branch deletion - no remote configured (local-only repo)`);
           }
         } else {
-          log.info(`Skipping remote branch deletion - no remote configured (local-only repo)`);
+          log.info(`Preserved remote branch for ${branchToDelete} (delete mode: ${deleteMode})`);
         }
       }
 

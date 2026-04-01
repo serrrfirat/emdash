@@ -6,6 +6,7 @@ import type { McpServer } from '../shared/mcp/types';
 import type { DiffPayload } from '../shared/diff/types';
 import type { GitIndexUpdateArgs } from '../shared/git/types';
 import type { ResourceMetricsSnapshot } from '../shared/performanceTypes';
+import type { WorktreeDeleteMode } from '../shared/worktree/deleteMode';
 
 // Keep preload self-contained: sandboxed preload cannot reliably require local runtime modules.
 const LIFECYCLE_EVENT_CHANNEL = 'lifecycle:event';
@@ -241,11 +242,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   }) => ipcRenderer.invoke('worktree:create', args),
   worktreeList: (args: { projectPath: string }) => ipcRenderer.invoke('worktree:list', args),
   worktreeRemove: (args: {
+    projectId?: string;
     projectPath: string;
     worktreeId: string;
     worktreePath?: string;
     branch?: string;
     taskName?: string;
+    deleteMode?: WorktreeDeleteMode;
   }) => ipcRenderer.invoke('worktree:remove', args),
   worktreeStatus: (args: { worktreePath: string }) => ipcRenderer.invoke('worktree:status', args),
   worktreeMerge: (args: { projectPath: string; worktreeId: string }) =>
@@ -964,11 +967,13 @@ export interface ElectronAPI {
     projectPath: string;
   }) => Promise<{ success: boolean; worktrees?: any[]; error?: string }>;
   worktreeRemove: (args: {
+    projectId?: string;
     projectPath: string;
     worktreeId: string;
     worktreePath?: string;
     branch?: string;
     taskName?: string;
+    deleteMode?: WorktreeDeleteMode;
   }) => Promise<{ success: boolean; error?: string }>;
   worktreeStatus: (args: {
     worktreePath: string;

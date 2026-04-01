@@ -546,8 +546,13 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                                           onRename={(n) =>
                                             onRenameTask?.(typedProject, typedTask, n)
                                           }
-                                          onDelete={() => handleDeleteTask(typedProject, typedTask)}
+                                          onDelete={(mode) =>
+                                            handleDeleteTask(typedProject, typedTask, {
+                                              deleteMode: mode,
+                                            })
+                                          }
                                           onArchive={() => onArchiveTask?.(typedProject, typedTask)}
+                                          allowRemoteBranchDelete={!typedProject.isRemote}
                                           primaryAction={taskHoverAction}
                                         />
                                       </motion.div>

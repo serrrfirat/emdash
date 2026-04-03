@@ -11,6 +11,7 @@ import {
   DEFAULT_WORKTREE_DELETE_MODE,
   type WorktreeDeleteMode,
 } from '../../shared/worktree/deleteMode';
+import { getManagedWorktreePath, isManagedWorktreePath } from './worktreePaths';
 
 type BaseRefInfo = { remote: string; branch: string; fullRef: string };
 
@@ -87,13 +88,7 @@ export class WorktreeService {
       return;
     }
 
-    const isLikelyWorktree =
-      pathToRemove.includes('/worktrees/') ||
-      pathToRemove.includes('\\worktrees\\') ||
-      pathToRemove.includes('/.conductor/') ||
-      pathToRemove.includes('\\.conductor\\') ||
-      pathToRemove.includes('/.cursor/worktrees/') ||
-      pathToRemove.includes('\\.cursor\\worktrees\\');
+    const isLikelyWorktree = isManagedWorktreePath(projectPath, pathToRemove);
 
     if (!isLikelyWorktree) {
       log.warn(
@@ -206,7 +201,7 @@ export class WorktreeService {
       const settings = getAppSettings();
       const prefix = settings?.repository?.branchPrefix || 'emdash';
       branchName = this.sanitizeBranchName(`${prefix}/${sluggedName}-${hash}`);
-      worktreePath = path.join(projectPath, '..', `worktrees/${sluggedName}-${hash}`);
+      worktreePath = getManagedWorktreePath(projectPath, `${sluggedName}-${hash}`);
       const worktreeId = this.stableIdFromPath(worktreePath);
 
       log.info(`Creating worktree: ${branchName} -> ${worktreePath}`);
@@ -1211,8 +1206,7 @@ export class WorktreeService {
     const normalizedName = taskName || branchName.replace(/\//g, '-');
     const sluggedName = this.slugify(normalizedName) || 'task';
     const targetPath =
-      options?.worktreePath ||
-      path.join(projectPath, '..', `worktrees/${sluggedName}-${Date.now()}`);
+      options?.worktreePath || getManagedWorktreePath(projectPath, `${sluggedName}-${Date.now()}`);
     const worktreePath = path.resolve(targetPath);
 
     if (fs.existsSync(worktreePath)) {

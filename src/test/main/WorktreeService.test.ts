@@ -3,6 +3,33 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { execSync, execFileSync } from 'child_process';
+import type { AppSettings } from '../../main/settings';
+
+const getAppSettingsMock = vi.hoisted(() =>
+  vi.fn(
+    (): AppSettings =>
+      ({
+        repository: {
+          branchPrefix: 'emdash',
+          pushOnCreate: true,
+          autoCloseLinkedIssuesOnPrCreate: true,
+        },
+      }) as AppSettings
+  )
+);
+
+const makeAppSettings = (repositoryOverrides?: Partial<AppSettings['repository']>): AppSettings =>
+  ({
+    repository: {
+      branchPrefix: 'emdash',
+      pushOnCreate: true,
+      autoCloseLinkedIssuesOnPrCreate: true,
+      ...repositoryOverrides,
+    },
+    projectPrep: {
+      autoInstallOnOpenInEditor: true,
+    },
+  }) as AppSettings;
 
 // Mock electron app before importing anything that depends on it
 vi.mock('electron', () => ({
@@ -38,6 +65,10 @@ vi.mock('../../main/lib/logger', () => ({
     warn: vi.fn(),
     error: vi.fn(),
   },
+}));
+
+vi.mock('../../main/settings', () => ({
+  getAppSettings: getAppSettingsMock,
 }));
 
 describe('WorktreeService', () => {
@@ -310,6 +341,7 @@ describe('WorktreeService', () => {
     let mainRepo: string;
 
     beforeEach(async () => {
+      getAppSettingsMock.mockReturnValue(makeAppSettings());
       tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'worktree-tracking-test-'));
       mainRepo = path.join(tempDir, 'main-repo');
 
@@ -395,6 +427,56 @@ describe('WorktreeService', () => {
       }).trim();
 
       expect(upstream).toBe(`origin/${branchName}`);
+    });
+
+    it('creates worktrees under the configured custom worktree root', async () => {
+      const customRoot = path.join(tempDir, 'custom-worktrees-root');
+      getAppSettingsMock.mockReturnValue(
+        makeAppSettings({
+          pushOnCreate: false,
+          worktreeRootDirectory: customRoot,
+        })
+      );
+
+      vi.resetModules();
+      const mod = await import('../../main/services/WorktreeService');
+      const configuredService = mod.worktreeService;
+
+      const worktree = await configuredService.createWorktree(
+        mainRepo,
+        'Custom Root Task',
+        'project-1'
+      );
+
+      expect(worktree.path.startsWith(`${customRoot}${path.sep}`)).toBe(true);
+      expect(fs.existsSync(worktree.path)).toBe(true);
+    });
+
+    it('creates branch-based worktrees under the configured custom worktree root', async () => {
+      const customRoot = path.join(tempDir, 'custom-worktrees-root');
+      getAppSettingsMock.mockReturnValue(
+        makeAppSettings({
+          pushOnCreate: false,
+          worktreeRootDirectory: customRoot,
+        })
+      );
+
+      execSync('git checkout -b existing-branch', { cwd: mainRepo, stdio: 'pipe' });
+      execSync('git checkout main', { cwd: mainRepo, stdio: 'pipe' });
+
+      vi.resetModules();
+      const mod = await import('../../main/services/WorktreeService');
+      const configuredService = mod.worktreeService;
+
+      const worktree = await configuredService.createWorktreeFromBranch(
+        mainRepo,
+        'Existing Branch Task',
+        'existing-branch',
+        'project-1'
+      );
+
+      expect(worktree.path.startsWith(`${customRoot}${path.sep}`)).toBe(true);
+      expect(fs.existsSync(worktree.path)).toBe(true);
     });
   });
 

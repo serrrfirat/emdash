@@ -251,7 +251,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ initialTab, onClose 
     repository: {
       title: 'Repository',
       description: 'Configure repository and branch settings.',
-      sections: [{ title: 'Branch name', component: <RepositorySettingsCard /> }],
+      sections: [{ title: 'Repository defaults', component: <RepositorySettingsCard /> }],
     },
     interface: {
       title: 'Interface',

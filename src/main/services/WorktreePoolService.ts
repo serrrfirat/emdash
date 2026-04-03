@@ -5,6 +5,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { log } from '../lib/logger';
 import { worktreeService, type WorktreeInfo } from './WorktreeService';
+import { getManagedWorktreePath, getManagedWorktreesDirectories } from './worktreePaths';
 
 const execFileAsync = promisify(execFile);
 
@@ -57,7 +58,7 @@ export class WorktreePoolService {
 
   /** Get the reserve worktree path for a project */
   private getReservePath(projectPath: string, hash: string): string {
-    return path.join(projectPath, '..', `worktrees/${this.RESERVE_PREFIX}-${hash}`);
+    return getManagedWorktreePath(projectPath, `${this.RESERVE_PREFIX}-${hash}`);
   }
 
   /** Get the reserve branch name */
@@ -398,8 +399,13 @@ export class WorktreePoolService {
     const sluggedName = this.slugify(taskName);
     const hash = this.generateShortHash();
     const newBranch = `${prefix}/${sluggedName}-${hash}`;
-    const newPath = path.join(reserve.projectPath, '..', `worktrees/${sluggedName}-${hash}`);
+    const newPath = getManagedWorktreePath(reserve.projectPath, `${sluggedName}-${hash}`);
     const newId = this.stableIdFromPath(newPath);
+
+    const newWorktreesDir = path.dirname(newPath);
+    if (!fs.existsSync(newWorktreesDir)) {
+      fs.mkdirSync(newWorktreesDir, { recursive: true });
+    }
 
     // Move the worktree (instant operation)
     await execFileAsync('git', ['worktree', 'move', reserve.path, newPath], {
@@ -558,33 +564,34 @@ export class WorktreePoolService {
     projectPath: string,
     reserveBranches: Set<string>
   ): Array<{ path: string; branch: string | null }> {
-    const worktreesDir = path.join(projectPath, '..', 'worktrees');
-    if (!fs.existsSync(worktreesDir)) {
-      return [];
-    }
-
     const result: Array<{ path: string; branch: string | null }> = [];
-    try {
-      const entries = fs.readdirSync(worktreesDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isDirectory() || !entry.name.startsWith(`${this.RESERVE_PREFIX}-`)) {
-          continue;
-        }
-
-        const reservePath = path.join(worktreesDir, entry.name);
-        const ownerPath = this.getMainRepoPathFromWorktree(reservePath);
-        const branch = this.getReserveBranchFromDirectoryName(entry.name);
-        const ownsReserve = ownerPath ? path.resolve(ownerPath) === projectPath : false;
-        const branchBelongsToProject = branch ? reserveBranches.has(branch) : false;
-
-        if (!ownsReserve && !branchBelongsToProject) {
-          continue;
-        }
-
-        result.push({ path: reservePath, branch });
+    for (const worktreesDir of getManagedWorktreesDirectories(projectPath)) {
+      if (!fs.existsSync(worktreesDir)) {
+        continue;
       }
-    } catch {
-      // Ignore unreadable worktrees directory.
+
+      try {
+        const entries = fs.readdirSync(worktreesDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isDirectory() || !entry.name.startsWith(`${this.RESERVE_PREFIX}-`)) {
+            continue;
+          }
+
+          const reservePath = path.join(worktreesDir, entry.name);
+          const ownerPath = this.getMainRepoPathFromWorktree(reservePath);
+          const branch = this.getReserveBranchFromDirectoryName(entry.name);
+          const ownsReserve = ownerPath ? path.resolve(ownerPath) === projectPath : false;
+          const branchBelongsToProject = branch ? reserveBranches.has(branch) : false;
+
+          if (!ownsReserve && !branchBelongsToProject) {
+            continue;
+          }
+
+          result.push({ path: reservePath, branch });
+        }
+      } catch {
+        // Ignore unreadable worktrees directory.
+      }
     }
 
     return result;
@@ -760,8 +767,8 @@ export class WorktreePoolService {
 
     // Find all worktree directories that might contain reserves
     const homedir = require('os').homedir();
-    const projectWorktreeDirs = projectPaths.map((projectPath) =>
-      path.join(projectPath, '..', 'worktrees')
+    const projectWorktreeDirs = projectPaths.flatMap((projectPath) =>
+      getManagedWorktreesDirectories(projectPath)
     );
     const possibleWorktreeDirs = [
       ...projectWorktreeDirs,

@@ -9,7 +9,7 @@
 
 ## Current Behavior
 
-- task worktrees are created under `../worktrees/`
+- task worktrees are created under `../worktrees/` by default, or under the configured worktree root from settings
 - branch prefix defaults to `emdash` and is configurable in app settings
 - selected gitignored files are preserved into worktrees
 - reserve worktrees are pre-created to reduce task startup latency

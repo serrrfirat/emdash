@@ -4,6 +4,28 @@ import path from 'path';
 import os from 'os';
 import { execSync } from 'child_process';
 import { WorktreePoolService } from '../../main/services/WorktreePoolService';
+import type { AppSettings } from '../../main/settings';
+
+const getAppSettingsMock = vi.hoisted(() =>
+  vi.fn().mockReturnValue({
+    repository: {
+      branchPrefix: 'emdash',
+      pushOnCreate: false,
+    },
+  } as AppSettings)
+);
+
+const makeAppSettings = (repositoryOverrides?: Partial<AppSettings['repository']>): AppSettings =>
+  ({
+    repository: {
+      branchPrefix: 'emdash',
+      pushOnCreate: false,
+      ...repositoryOverrides,
+    },
+    projectPrep: {
+      autoInstallOnOpenInEditor: true,
+    },
+  }) as AppSettings;
 
 vi.mock('electron', () => ({
   app: {
@@ -39,12 +61,7 @@ vi.mock('../../main/lib/logger', () => ({
 }));
 
 vi.mock('../../main/settings', () => ({
-  getAppSettings: vi.fn().mockReturnValue({
-    repository: {
-      branchPrefix: 'emdash',
-      pushOnCreate: false,
-    },
-  }),
+  getAppSettings: getAppSettingsMock,
 }));
 
 describe('WorktreePoolService', () => {
@@ -93,6 +110,7 @@ describe('WorktreePoolService', () => {
   };
 
   beforeEach(() => {
+    getAppSettingsMock.mockReturnValue(makeAppSettings());
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'worktree-pool-test-'));
     projectPath = path.join(tempDir, 'project');
     initRepo(projectPath);
@@ -122,6 +140,30 @@ describe('WorktreePoolService', () => {
     await pool.ensureReserve('project-1', projectPath, 'HEAD');
     const reserve = pool.getReserve('project-1');
     expect(reserve).toBeDefined();
+
+    const restartedPool = new WorktreePoolService();
+    await restartedPool.removeReserve('project-1', projectPath);
+
+    expect(fs.existsSync(reserve!.path)).toBe(false);
+    const branchOutput = execSync('git branch --list "_reserve/*"', {
+      cwd: projectPath,
+      stdio: 'pipe',
+    }).toString();
+    expect(branchOutput.trim()).toBe('');
+  });
+
+  it('removes custom-root reserve artifacts from disk even when in-memory state was lost', async () => {
+    const customRoot = path.join(tempDir, 'external-worktrees');
+    getAppSettingsMock.mockReturnValue(
+      makeAppSettings({
+        worktreeRootDirectory: customRoot,
+      })
+    );
+
+    await pool.ensureReserve('project-1', projectPath, 'HEAD');
+    const reserve = pool.getReserve('project-1');
+    expect(reserve).toBeDefined();
+    expect(reserve!.path.startsWith(`${customRoot}${path.sep}`)).toBe(true);
 
     const restartedPool = new WorktreePoolService();
     await restartedPool.removeReserve('project-1', projectPath);
@@ -167,6 +209,25 @@ describe('WorktreePoolService', () => {
     expect(reserve).toBeDefined();
     expect(reserve!.commitHash).toBeDefined();
     expect(reserve!.commitHash).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it('stores reserve and claimed worktrees under the configured custom worktree root', async () => {
+    const customRoot = path.join(tempDir, 'external-worktrees');
+    getAppSettingsMock.mockReturnValue(
+      makeAppSettings({
+        worktreeRootDirectory: customRoot,
+      })
+    );
+
+    await pool.ensureReserve('project-1', projectPath, 'HEAD');
+
+    const reserve = pool.getReserve('project-1');
+    expect(reserve).toBeDefined();
+    expect(reserve!.path.startsWith(`${customRoot}${path.sep}`)).toBe(true);
+
+    const claimed = await pool.claimReserve('project-1', projectPath, 'custom-root-task');
+    expect(claimed).not.toBeNull();
+    expect(claimed!.worktree.path.startsWith(`${customRoot}${path.sep}`)).toBe(true);
   });
 
   describe('freshness polling', () => {

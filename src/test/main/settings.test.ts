@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { homedir } from 'node:os';
 
 vi.mock('electron', () => ({
   app: {
@@ -49,6 +50,36 @@ describe('normalizeSettings - repository settings', () => {
     );
 
     expect(result.repository.autoCloseLinkedIssuesOnPrCreate).toBe(false);
+  });
+
+  it('expands a custom worktree root directory under repository settings', () => {
+    const result = normalizeSettings(
+      makeSettings({
+        repository: {
+          branchPrefix: 'emdash',
+          pushOnCreate: true,
+          autoCloseLinkedIssuesOnPrCreate: true,
+          worktreeRootDirectory: '~/custom-worktrees',
+        } as any,
+      })
+    );
+
+    expect(result.repository.worktreeRootDirectory).toBe(`${homedir()}${'/custom-worktrees'}`);
+  });
+
+  it('clears blank custom worktree root directory values', () => {
+    const result = normalizeSettings(
+      makeSettings({
+        repository: {
+          branchPrefix: 'emdash',
+          pushOnCreate: true,
+          autoCloseLinkedIssuesOnPrCreate: true,
+          worktreeRootDirectory: '   ',
+        } as any,
+      })
+    );
+
+    expect(result.repository.worktreeRootDirectory).toBeUndefined();
   });
 });
 

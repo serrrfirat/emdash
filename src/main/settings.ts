@@ -30,6 +30,7 @@ export interface RepositorySettings {
   branchPrefix: string; // e.g., 'emdash'
   pushOnCreate: boolean;
   autoCloseLinkedIssuesOnPrCreate: boolean;
+  worktreeRootDirectory?: string;
 }
 
 export type ShortcutModifier =
@@ -232,7 +233,7 @@ function deepMerge<T extends Record<string, any>>(base: T, partial?: Partial<T>)
   for (const [k, v] of Object.entries(partial)) {
     if (v && typeof v === 'object' && !Array.isArray(v)) {
       out[k] = deepMerge((base as any)[k] ?? {}, v as any);
-    } else if (v !== undefined) {
+    } else {
       out[k] = v;
     }
   }
@@ -402,10 +403,19 @@ export function normalizeSettings(input: AppSettings): AppSettings {
     repo?.autoCloseLinkedIssuesOnPrCreate ??
       DEFAULT_SETTINGS.repository.autoCloseLinkedIssuesOnPrCreate
   );
+  let worktreeRootDirectory =
+    typeof repo?.worktreeRootDirectory === 'string' ? repo.worktreeRootDirectory.trim() : '';
+  if (worktreeRootDirectory.startsWith('~')) {
+    worktreeRootDirectory = join(homedir(), worktreeRootDirectory.slice(1));
+  }
+  if (worktreeRootDirectory) {
+    worktreeRootDirectory = join(worktreeRootDirectory);
+  }
 
   out.repository.branchPrefix = prefix;
   out.repository.pushOnCreate = push;
   out.repository.autoCloseLinkedIssuesOnPrCreate = autoCloseLinkedIssuesOnPrCreate;
+  out.repository.worktreeRootDirectory = worktreeRootDirectory || undefined;
   // Project prep
   const prep = (input as any)?.projectPrep || {};
   out.projectPrep.autoInstallOnOpenInEditor = Boolean(
